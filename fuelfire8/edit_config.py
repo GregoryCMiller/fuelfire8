@@ -6,6 +6,8 @@ example::
 	>>> cf.PresetModify([('risk', 'ONLY_H')], 'a new caption')
 	
 """
+
+
 class ConfigFile:
 	"""FUELFIRE configuration file with methods to read, edit, and write
 	parameters
@@ -61,11 +63,11 @@ class ConfigFile:
 		}
 	
 
-	def __init__(self,configfile):
-		"""read config file and index parameter line numbers"""
+	def __init__(self, configfile):
+		"""Read config file and index parameter line numbers"""
 		self.configfile = configfile
-		self.LoadConfig() 	#Read the file
-		self.MapParams()	#Get parameter->line dictionary 		
+		self.LoadConfig()
+		self.MapParams()	
 
 	def PresetModify(self,presetlist,caption):
 		"""Execute a list of modifications including a caption"""
@@ -82,31 +84,25 @@ class ConfigFile:
 			l = self.pmap.get(group).get(par)
 			self.lines[l] = self.FormatLine(self.lines[l],val)
 
-	def ManualEdit(self,group,par,val):
-		"""Edit the value of a specific parameter
-		
-		pass the group, parameter and value """
+	def ManualEdit(self, group, par, val):
+		"""Replace the value of the given group and parameter"""
 		l = self.pmap.get(group).get(par)
 		self.lines[l] = self.FormatLine(self.lines[l],val)
 
-	def FormatLine(self,line,val):
-		"""create formatted line containing new parameter"""		
-		idx = line.find('=')+1
-		return line[:idx]+' '+str(val)+' \n'
+	def FormatLine(self, line, val):
+		"""create formatted line containing new parameter"""
+		return "{} {} \n".format(line[:line.find('=')+1], val)
 		
 	def LoadConfig(self):
-		"""Reads the configuration file"""
-		f = open(self.configfile,'r')
-		self.lines = f.readlines()
-		f.close()
-		
+		"""Read the configuration file"""
+		with open(self.configfile, 'r') as f:
+			self.lines = f.readlines()
+			
 	def WriteConfig(self):
-		"""Writes the modified config file"""
-		f = open(self.configfile,'w')
-		for line in self.lines:
-			f.write(line)
-		f.close()
-	
+		"""Write the modified config file"""
+		with open(self.configfile, 'w') as f:
+			[f.write(line) for line in self.lines]
+			
 	def MapParams(self):
 		"""Creates a mapping of parameter heading and name to its configuration file line number"""
 		self.pmap = dict([(phead,{}) for phead in self.pheads]) 

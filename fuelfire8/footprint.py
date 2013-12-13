@@ -6,6 +6,12 @@ import unittest2 as unittest
 def Wedge(radius, start, end, maxdist=None, mindist=None, center=False):
     """Select grid cell centers within a bearing and distance range.
     
+    
+    Parameters
+    ----------    
+    
+    radius
+        Defines side length 2*radius+1. Must be a positive integer.  
     parameters::
             
         radius       Defines side length 2*radius+1. Must be a positive integer.  
@@ -15,10 +21,30 @@ def Wedge(radius, start, end, maxdist=None, mindist=None, center=False):
         
     examples::
     
-        circle   Wedge(4, 0, 360, maxdist=4)
-        wedge    Wedge(4, 0, 90)
-        ring     Wedge(4, 0, 360, mindist = 2, maxdist=4)
-        arc      Wedge(4, 0, 90, mindist=2, maxdist=4)
+    start/end
+        start/end angle of wedge in degrees counter-clockwise from 3:00. Values outside [0,360) allowed. 
+    
+    min/maxdist  
+        minimum/maximum euclidean distance (default=None)
+    
+    center       
+        assign value of center cell (default=False)
+    
+    
+    usage examples
+    --------------
+    
+    circle
+        >>> Wedge(4, 0, 360, maxdist=4)
+        
+    wedge
+        >>> Wedge(4, 0, 90)
+        
+    ring 
+        >>> Wedge(4, 0, 360, mindist = 2, maxdist=4)
+    
+    arc 
+        >>> Wedge(4, 0, 90, mindist=2, maxdist=4)
     
     """
     start, end = unwrapPhase(start), unwrapPhase(end)
@@ -55,12 +81,12 @@ class TestWedge(unittest.TestCase):
     """Wedge test fixture""" 
     def test_edge(self):
         """test edge cases behave as expected"""
-        self.assertRaises(TypeError, Wedge, '2', 0, 0)
-        self.assertRaises(TypeError, Wedge, 2, '0', 0)
+        self.assertRaises(TypeError, Wedge, '2', 0, 0) # bad parameters raise
+        self.assertRaises(TypeError, Wedge, 2, '0', 0)  
         
-        self.assertEqual(Wedge(-1, 0, 90).shape, (0,0))
-        self.assertEqual(Wedge(0, 0, 90).shape, (1,1))
-        self.assertEqual(Wedge(1, 0, 90).shape, (3,3))
+        self.assertRaises(IndexError, Wedge, -1, 0, 90) # radius -1 raises
+        self.assertEqual(Wedge(0, 0, 90).shape, (1,1)) 
+        self.assertEqual(Wedge(1, 0, 90).shape, (3,3)) 
 
     def test_quads(self): 
         w_1_0_90    = [[0, 0, 0],
@@ -261,5 +287,5 @@ def GetFootprint(code):
     return footprintdict[code]
    
 if __name__ == "__main__":
-    #unittest.TextTestRunner(verbosity=2).run(unittest.makeSuite(TestWedge))
+    unittest.TextTestRunner(verbosity=2).run(unittest.makeSuite(TestWedge))
     unittest.main()

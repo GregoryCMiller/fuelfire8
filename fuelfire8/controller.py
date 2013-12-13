@@ -12,9 +12,8 @@ from netCDF4 import Dataset
 
 try:
     import scipy.ndimage
-except ImportError:
-    pass
-    
+except ImportError, e:
+    print e
     
 from fuelfire8 import ConfigFile, GetFootprint, Wedge
 
@@ -30,7 +29,9 @@ def PropegateModel(dst, src=None, copyrecord=False, copyrepeats=False,
                    spinup=0, recordlength=None, runrecord=0, 
                    repeatlength=None, runrepeats=(0,0), stepoffset=0 
                    ):
-    """create a new record from an existing one. specify which data files are copied or reset. 
+    """[Main interface] Copy an existing model with options to handle
+    data files, modify configuration, run spinup, "record" or "repeat"
+    procedures.
     
     dst           
         Destination folder or target model
@@ -201,38 +202,40 @@ class FuelFire:
 
     def Kill(self):
         """Kill any running FUELFIRE threads using the process name"""
-        f = open('execlog.txt', 'w')
         starttime = time.time()
-        SHELL.SendKeys('{ESC}')
-        SHELL.SendKeys('^S')
-        while not self.FF_EXE.poll():
-            p = subprocess.Popen('TASKKILL '+'/IM '+'FUELFIRE.EXE' +' /F', stderr=f, stdout=f, shell=True)
-            while not p.poll():
-                time.sleep(self.POLLSLEEP)
+        
+        SHELL.SendKeys('{ESC}') # break full screen
+        SHELL.SendKeys('^S')    # pause the model (helps kill faster)
+        
+        with open('execlog.txt', 'w') as f:
+            while not self.FF_EXE.poll():
+                p = subprocess.Popen('TASKKILL '+'/IM '+'FUELFIRE.EXE' +' /F', stderr=f, stdout=f, shell=True)
+                while not p.poll():
+                    time.sleep(self.POLLSLEEP)
 
-        f.close()
         os.remove('execlog.txt')
         os.chdir(self.ffdir)
+        
         if time.time() - starttime < self.KILLTIMEOUT:
             self.steptime = str(int(time.time() - self.starttime))
             return True
         else:
             logging.error('Kill Timeout')
             self.status = False
-            return
+            return None
 
     def GetBout(self):    
         """Read the burnt output file """
         retval = None
         if self.status == True and os.access(self.burnfile, os.F_OK):
             retval = num.array(num.loadtxt(self.burnfile, skiprows=6), dtype='i') 
-            retval = retval <= 0
+            retval = retval <= 0 # -1,0 indicate burned?? 
             
         return retval
         
     def RemoveBurn(self):
         """remove all BURNT<n>OUT.TXT files"""
-        
+        #[os.remove(f) for f in glob.glob("BURNT[0-9]+OUT.TXT")]
         n = 0
         while 1:
             f = os.path.join(self.ffdir,'BURNT%dOUT.TXT' % n)
@@ -249,7 +252,7 @@ class RecordedFuelFire:
     
     must specify the total number of steps stored at creation 
     
-    Data file variables (dimensions)
+    record.nc variables (dimensions)
     --------------------------------
     
     age (txy)   
@@ -350,7 +353,7 @@ class RecordedFuelFire:
 class RepeatedFuelFire:
     """Run and store replicate trials from a RecordedFuelFire experiment
     
-    Data file variables (dimensions)
+    repeat.nc variables (dimensions)
     --------------------------------
     
     steps (t)
