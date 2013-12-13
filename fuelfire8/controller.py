@@ -1,4 +1,5 @@
 """classes for controlling, recording runs, and recording replicate runs on the FUELFIRE8 model"""
+
 import logging
 import os
 import shutil
@@ -7,41 +8,71 @@ import time
 import win32com.client
 
 import numpy as num
-import scipy.ndimage
 from netCDF4 import Dataset
 
-from fuelfire8.EditConfig import ConfigFile
-from fuelfire8.footprint_preset import GetFootprint
-from fuelfire8.Footprint import Wedge
+try:
+    import scipy.ndimage
+except ImportError:
+    pass
+    
+    
+from fuelfire8 import ConfigFile, GetFootprint, Wedge
 
 NETCDF_FORMAT = 'NETCDF3_CLASSIC'
 
 logging.basicConfig(format='%(asctime)s:%(levelname)s:%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.FileHandler('log.txt'))
-shell = win32com.client.Dispatch("WScript.Shell")
+SHELL = win32com.client.Dispatch("WScript.Shell")
 
 def PropegateModel(dst, src=None, copyrecord=False, copyrepeats=False,
-                   modif=None, caption=None, spinup=0,
-                   recordlength=None, runrecord=0,
-                   repeatlength=None, runrepeats=(0,0),
-                   stepoffset=0
+                   modif=None, caption=None, 
+                   spinup=0, recordlength=None, runrecord=0, 
+                   repeatlength=None, runrepeats=(0,0), stepoffset=0 
                    ):
-    """create a new record from an existing one. specify data files are copied or reset. 
+    """create a new record from an existing one. specify which data files are copied or reset. 
     
-    parameters::
+    dst           
+        Destination folder or target model
+    
+    src
+        Source folder, empty or None if not copying 
+    
+    copyrecord
+        copy the RecordedFuelFire data file when copying the model.
         
-        src           source folder
-        dst           destination folder
-        modif         configuration modifications
-        caption       new model caption
-        spinup        run a number of steps before recording 
-        recordlength  initialize RecordedFuelFire with specific record length
-        runrecord     run the RecordedFuelFire until a total of <x> steps completed
-        repeatlength  initialize a RepeatedFuelFire with a specific number of replicates
-        runrepeats    run the RepeatedFuelFire to <x> replicates of <y> steps 
-        stepoffset    
+    copyrepeats
+        copy the RepeatedFuelFire data file when copying the model.
         
+    modif         
+        Configuration modifications list (see fuelfire8.EditConfig)
+    
+    caption       
+        Created model caption parameter
+    
+    spinup        
+        Run <spinup> number of steps before beginning to record steps
+    
+    recordlength  
+        Initialize (or reset) RecordedFuelFire data file with
+        <recordlength> time steps
+    
+    runrecord     
+        Run RecordedFuelFire forward steps until a total of <runrecord>
+        steps are completed
+    
+    repeatlength  
+        Initialize RepeatedFuelFire data file specififying storage for
+        <repeatlength> replicates of each step
+    
+    runrepeats    
+        Run the RepeatedFuelFire to <replicates> replicates of <steps>
+        steps
+    
+    stepoffset:
+        Temporarily add <stepoffset> to the list of shuffled steps.
+        choose 1 to run the second of pairs of steps.
+    
     """
     if src is not None:
         CopyModel(src, dst, record=copyrecord, repeat=copyrepeats)
@@ -66,7 +97,9 @@ def PropegateModel(dst, src=None, copyrecord=False, copyrepeats=False,
     
 
 class FuelFire:
-    """Controller for a FuelFire model"""    
+    """Controller for a FuelFire model with methods for starting,
+    stopping, timed run, run x steps, clear temp data"""
+    # controller time constants in seconds 
     LAUNCHWAIT  = 1     # while FF_EXE launches before dialog exit
     ACCESSSLEEP = 2     # while file cannot be accessed
     MODTHRESH   = 2     # modification time threshold
@@ -82,6 +115,12 @@ class FuelFire:
         self.exefile  = os.path.join(self.ffdir, 'FUELFIRE.EXE')
         self.agefile  = os.path.join(self.ffdir, 'AGEPIX.DAT')
         self.fuelfile = os.path.join(self.ffdir, 'CANOPIX.DAT')
+
+        # instance variables initialized later
+        #   status      False if something went wrong during this step 
+        #   starttime   time model was started
+        #   FF_EXE      subprocess instance 
+        #   burndata    loaded burned pixel matrix from this step
         
     def EditConfig(self, modlist, caption):
         """Use the EditConfig module modify the config file"""
@@ -104,7 +143,7 @@ class FuelFire:
             self.RemoveBurn()
             self.StartModel()
             self.ModelWait(fatalerror=False)
-            if self.status == True:
+            if self.status:
                 marks = range(0,maxstep,printinc)
                 while len(marks) > 0:
                     if os.path.exists('BURNT%dOUT.TXT' % marks[0]):
@@ -116,7 +155,7 @@ class FuelFire:
             self.Kill()
             self.RemoveBurn()    
             
-            if self.status == True:
+            if self.status:
                 logging.info('completed')
                 return 
             else:
@@ -132,7 +171,7 @@ class FuelFire:
     def StartModel(self):
         """Start the fuelfire model"""
         os.chdir(self.ffdir)
-        if os.path.exists(self.burnfile) == True:
+        if os.path.exists(self.burnfile):
             os.remove(self.burnfile)
 
         self.burndata = None
@@ -140,7 +179,7 @@ class FuelFire:
         self.starttime = time.time()
         self.FF_EXE = subprocess.Popen(self.exefile, shell=False)      
         time.sleep(self.LAUNCHWAIT)
-        shell.SendKeys('{ESC}')
+        SHELL.SendKeys('{ESC}')
 
     def ModelWait(self, fatalerror=True):
         """Wait for the running model to write the BURNOUT file"""
@@ -164,11 +203,11 @@ class FuelFire:
         """Kill any running FUELFIRE threads using the process name"""
         f = open('execlog.txt', 'w')
         starttime = time.time()
-        shell.SendKeys('{ESC}')
-        shell.SendKeys('^S')
-        while self.FF_EXE.poll() == None:
+        SHELL.SendKeys('{ESC}')
+        SHELL.SendKeys('^S')
+        while not self.FF_EXE.poll():
             p = subprocess.Popen('TASKKILL '+'/IM '+'FUELFIRE.EXE' +' /F', stderr=f, stdout=f, shell=True)
-            while p.poll() == None:
+            while not p.poll():
                 time.sleep(self.POLLSLEEP)
 
         f.close()
@@ -193,6 +232,7 @@ class FuelFire:
         
     def RemoveBurn(self):
         """remove all BURNT<n>OUT.TXT files"""
+        
         n = 0
         while 1:
             f = os.path.join(self.ffdir,'BURNT%dOUT.TXT' % n)
@@ -203,7 +243,28 @@ class FuelFire:
             n += 1
                 
 class RecordedFuelFire:
-    """Controller for Fuelfire model with NetCDF data recording of age, fuel and steps completed """
+    """Run and record a sequence of FUELFIRE model steps saving age,
+    fuel, and steps completed to a NetCDF file
+    
+    
+    must specify the total number of steps stored at creation 
+    
+    Data file variables (dimensions)
+    --------------------------------
+    
+    age (txy)   
+        time since fire in model steps (0-255 stored as x-128)
+    
+    fuel (txy)
+        fuel level (0-255 stored as x-128)
+    
+    complete (t)
+        step status 0|1
+    
+    shufsteps (t)
+        randomly ordered step index (inhereted by replication experiments)
+        
+    """
     def __init__(self, ffdir, maxsteps=None):
         """Load existing record or create empty record"""
         self.ff = FuelFire(ffdir)
@@ -217,8 +278,7 @@ class RecordedFuelFire:
             self.nc = Dataset(self.ncfile,'a')
         
         if (not os.path.exists(self.ncfile)) & (maxsteps == None):
-            print('file not found {0}'.format(self.ncfile))
-            raise StandardError    
+            raise StandardError('file not found {0}'.format(self.ncfile))    
     
     def CreateEmptyRecord(self, steps):
         """create and empty record of age and fuel"""
@@ -288,28 +348,46 @@ class RecordedFuelFire:
 
         
 class RepeatedFuelFire:
-    """represents a replicated fuelfire model built on a RecordedFuelFire object
+    """Run and store replicate trials from a RecordedFuelFire experiment
     
-    netcdf variables::
-        
-        steps        sequential step number of replicated landscape
-        repvar       number of replicates so far        
-        trials       bitpacked binary burned pixels from each replicate trial (r,t,x,y)
-        age          time since fire in model steps (t,x,y)
-        fuel         fuel level (t,x,y)
-        haz          number of times burned
-        reach        number of times reached (within neighborhood filter of burned 
-        burnifreach  number of times burned and reached
-        
+    Data file variables (dimensions)
+    --------------------------------
+    
+    steps (t)
+        sequential step number of replicated landscape
+    
+    repvar (t)
+        number of replicates so far        
+    
+    trials (rtxy)
+        bitpacked binary burned pixels from each replicate trial
+    
+    age (txy)
+        time since fire in model steps
+    
+    fuel (txy)
+        fuel level
+    
+    haz (txy)
+        number of times burned
+    
+    reach (txy)
+        number of times reached (within neighborhood filter of burned 
+    
+    burnifreach (txy)   
+        number of times burned and reached
+    
     """
     def __init__(self, ffdir, maxreps=None, stepoffset=None,footprintcode='5ne',calcint=32):
         """load or create empty RepeatedFuelFire data"""
         self.rec = RecordedFuelFire(ffdir)
         self.repfile = os.path.join(ffdir, 'repeat.nc')
+        
         if not os.path.exists(self.repfile) and maxreps is not None:
             self.CreateEmptyRecord(maxreps, stepoffset)
         elif os.path.exists(self.repfile) and maxreps is None:
             self.rep = Dataset(self.repfile,'a')
+        
         self.footprintcode = footprintcode
         self.calcint = calcint
         
@@ -348,7 +426,7 @@ class RepeatedFuelFire:
         burnifreach = 'burned and reached'
         
     def RunReps(self, reps=None, steplim=None):
-        """run <reps> replicated trials on steps up to <steplim>"""
+        """run <reps> replicated trials on steps up to <steplim> or"""
         if reps == None:
             reps = 8 * len(self.rep.dimensions['r'])    
         if steplim == None:
@@ -431,7 +509,7 @@ class RepeatedFuelFire:
         print 'step probs %d (%d reps)' % (s, reps)
            
 def CopyModel(src, dst,repeat=False,record=False):
-    """copy all relevant model files from <src> to <dest> with options for recorded and repeated data files"""
+    """copy all relevant model files from <src> to <dest> with options for copying recorded and repeated data files"""
     if os.path.exists(dst):
         shutil.rmtree(dst)
     if not os.path.exists(dst):
@@ -450,16 +528,15 @@ def CopyModel(src, dst,repeat=False,record=False):
     logging.info('Copied to %s' % dst)
     
 def QuickUpdateProbs(path, footprintcode='7ne',maxreps=160):
-    """only update the step probabilities given an input footprint code string"""
+    """Recalculate derived step probabilities given an input footprint code string"""
     RepeatedFuelFire(path, footprintcode=footprintcode).UpdateStepProbs(maxreps=maxreps)
     return True
 
 def NewFilterVar(nc, srcvar, tarvar, footprint, dtype='i',dim=('t','x','y')):
-    """create a variable by applying a median filter to an existing variable"""
-    print('calculate {0} from {1}'.format(tarvar,srcvar))
+    """create a new xyt variable by applying a median filter each step slice of an existing xyt variable"""
+    print('New Filter Variable: {0} from {1}'.format(tarvar, srcvar))
     if srcvar not in nc.variables:
-        print('source var {0} not found'.format(srcvar))
-        raise StandardError
+        raise StandardError('source var {0} not found'.format(srcvar))
     
     if tarvar not in nc.variables:
         newvar = nc.createVariable(tarvar, dtype, dim)
@@ -470,7 +547,6 @@ def NewFilterVar(nc, srcvar, tarvar, footprint, dtype='i',dim=('t','x','y')):
         nc.variables[tarvar][step,:,:] = scipy.ndimage.median_filter(nc.variables[srcvar][step,:,:], footprint=footprint)
         print('{0}'.format(step))
     
-  
 def AddNeighbors(path, footprintcode='3sw', stepoffset=None):
     """create and/or recalculate a median age variable""" 
     print('calculate neighborhood age')
@@ -482,16 +558,14 @@ def AddNeighbors(path, footprintcode='3sw', stepoffset=None):
         ff.rep.sync()
 
     for s, step in enumerate(ff.rep.variables['step'][:]):    
-        ff.rep.variables['hoodmed'][s, :, :] = scipy.ndimage.median_filter(
-            rec.nc.variables['age'][step, :, :], footprint=GetFootprint(footprintcode)
-            )
+        ff.rep.variables['hoodmed'][s, :, :] = scipy.ndimage.median_filter(rec.nc.variables['age'][step, :, :], footprint=GetFootprint(footprintcode))
         
         print step
         
     ff.rep.sync()
 
 def FixAge(path, stepoffset):
-    """recopy the age and fuel data from replicate model to patch a previous error""" 
+    """Recopy the age and fuel data from replicate model to fix a previous copying error""" 
     print('fix age')
     rec = RecordedFuelFire(path)
     ff = RepeatedFuelFire(path)
@@ -505,7 +579,7 @@ def FixAge(path, stepoffset):
     
     
 def ChangeMosaic(ffdir, agesrc, fuelsrc):
-    """swap out the mosaic data files"""
+    """swap out the mosaic age and fuel data files"""
     ff = FuelFire(ffdir)
     age = num.array(num.loadtxt(os.path.join(ffdir,agesrc), delimiter=','), dtype='i')
     fuel = num.array(num.loadtxt(os.path.join(ffdir,fuelsrc), delimiter=','), dtype='i')

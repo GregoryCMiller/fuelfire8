@@ -1,12 +1,10 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name = "fuelfire8",
-    version = "0.0.1",
+    packages = find_packages(),
+    version = "0.0.2",
     author = "Greg Miller",
     author_email = "gmill002@gmail.com",
     description = "FUELFIRE8 helpers.",
-    packages = ["fuelfire8",],
-    package_dir = {"fuelfire8": "fuelfire8",},
-    install_requires = [],
     )

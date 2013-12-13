@@ -1,15 +1,27 @@
-"""Read and modify FUELFIRE configuration files"""
-import os
-import logging
+"""Read and modify FUELFIRE configuration files
 
+example::
+	
+	>>> cf = ConfigFile(cfg_path)
+	>>> cf.PresetModify([('risk', 'ONLY_H')], 'a new caption')
+	
+"""
 class ConfigFile:
-	#main parameter group headings used to index parameters in the fuelfire config file
+	"""FUELFIRE configuration file with methods to read, edit, and write
+	parameters
+	
+	
+	presets are defined which represent configurations of a few related
+	parameters. The key define the groups of parameters and the presets
+	define named sets of values (options) for a given key
+	"""
+	#parameter group headings used to index parameters in the fuelfire config file
 	pheads = [
 		'&GETBASIC', '&GETDEMO', '&GETAREA', '&GETWIND', '&GETFUEL', 
 		'&GETSTRIKE', '&GETSTATES', '&GETLOW', '&GETMOD', '&GETHIGH', 
 		'&GETVHIGH', '&GETEXTREME', '&GETSUPPRESS', '&GETOUTPUT', '&GETMOSAIC']
 	
-	#presets are defined which represent configurations of a few related parameters. The key define the groups of parameters and the presets define named sets of values (options) for a given key
+	#preset groups of parameters
 	KEYS = {
 		'fuel': [
 			('&GETFUEL','IMMATURE_FUEL_FACTOR'),
@@ -26,6 +38,7 @@ class ConfigFile:
 			('&GETSUPPRESS','CANCEL_AT_STEP')],
 		}
 	
+	#named preset combinations
 	PRESETS = {
 		'fuel': {
 			'1-04'		:[1, 0.4],
@@ -49,6 +62,7 @@ class ConfigFile:
 	
 
 	def __init__(self,configfile):
+		"""read config file and index parameter line numbers"""
 		self.configfile = configfile
 		self.LoadConfig() 	#Read the file
 		self.MapParams()	#Get parameter->line dictionary 		
@@ -114,11 +128,5 @@ class ConfigFile:
 				if line.count(self.pheads[p]) == 1:
 					isopen = True
 		
-# basic usage
-def Edit(ffdir,modlist,caption):
-	cf = ConfigFile(os.path.join(ffdir, 'FUELFIRE.CFG'))
-	cf.PresetModify(modlist,caption)
-	logging.INFO('modify '+ffdir+' : '+str(modlist))
-
 
 
