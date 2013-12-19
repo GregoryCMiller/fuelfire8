@@ -1,7 +1,11 @@
 fuelfire8
 =========
 
-helpers for FUELFIRE8 coupled fire and vegetation simulation
+helpers for FUELFIRE8 coupled fire and vegetation simulation.
+
+PropegateModel
+    Copy an existing model with options to handle data files, modify 
+    configuration, run spinup, "record", or "repeat" procedures.
 
 FuelFire
     Controller for a FuelFire model with methods for starting, stopping,
@@ -15,11 +19,6 @@ RepeatedFuelFire
     Run and store replicate trials pulled from a RecordedFuelFire
     experiment.
 
-PropegateModel
-    [Main interface] Copy an existing model with options to handle
-    data files, modify configuration, run spinup, "record" or "repeat"
-    procedures.
-    
 ConfigFile
     FUELFIRE configuration file with methods to read, write, and edit
     parameters.
